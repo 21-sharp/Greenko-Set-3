@@ -56,10 +56,12 @@ Live values are returned by the `/api/metrics` endpoint under `model_benchmarks.
 - The variance attribution coefficients (`solar_coeff`, `wind_coeff`) are derived from OLS regression on the non-outage subset of the training data. They represent average sensitivities across the dataset and may not generalise to individual asset types or seasonal conditions.
 - StandardScaler normalisation is fitted exclusively on training rows (rows 0-47) and applied to both the test set and live inference to prevent data leakage.
 - The knowledge base is loaded from `data/knowledge_base.json` at startup and extended with the four hard-coded SOP entries. Additional domain entries can be appended to that file without restarting the service.
-- Deployment on Vercel uses the Mangum ASGI adapter (`backend/api.py`). The Railway deployment uses the `Procfile` with `uvicorn`.
+- The deployment uses the `Procfile` and `railway.json` with `uvicorn` as the ASGI application server.
 
 ## Deployment
 
-Railway: uses `Procfile` and `railway.json` already present in the repository root.
+The application is deployed using the bundled `Procfile` and `railway.json` for one-click deployment to Railway:
 
-Vercel: uses `vercel.json` routing all requests to the Mangum handler in `backend/api.py`.
+```
+web: uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}
+```
