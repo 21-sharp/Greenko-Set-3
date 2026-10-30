@@ -1,0 +1,6 @@
+{
+  "python.analysis.extraPaths": [
+    "./03_generation_forecasting_variance_agent"
+  ]
+}
+
