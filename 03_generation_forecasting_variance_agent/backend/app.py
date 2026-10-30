@@ -78,7 +78,16 @@ def get_metrics():
     return {
         'summary_statistics': model_service.get_summary_stats(),
         'model_benchmarks': model_service.metrics_summary,
-        'feature_importances': model_service.feature_importances
+        'feature_importances': model_service.feature_importances,
+        'variance_attribution_methodology': (
+            'Variance is decomposed using a five-component waterfall: '
+            '(1) Outage driver: when outage_flag=1, a physics-based weather potential formula '
+            '(irradiance * 45 + wind_cubic * 50 - temp_derate * 0.25) estimates the expected loss and 70% is attributed to the forced outage. '
+            '(2) Solar irradiance driver: linear regression coefficient fitted on non-outage records (solar_coeff) is scaled by the delta from mean irradiance divided by 100 W/m2 bins. '
+            '(3) Wind driver: analogous regression coefficient (wind_coeff) applied to the delta in v^2.2 space, normalised by 20 units. '
+            '(4) Temperature derate: -0.22 MWh per degree Celsius above 25 degrees C captures PV module efficiency loss at approximately -0.4%/deg C relative to fleet mean output. '
+            '(5) Residual: remainder after summing the four explained components, capturing unmodeled curtailment, sensor noise, and inverter clipping events.'
+        )
     }
 
 @app.post('/api/predict')
@@ -96,9 +105,11 @@ def analyze_variance(req: VarianceRequest):
         matches = model_service.df[model_service.df['date'] == req.date]
         if matches.empty:
             raise HTTPException(status_code=404, detail=f"Date {req.date} not found")
-        row = matches.iloc[0].to_dict()
-        return variance_engine.decompose_record(row)
-    
+        decompositions = [variance_engine.decompose_record(row.to_dict()) for _, row in matches.iterrows()]
+        if len(decompositions) == 1:
+            return decompositions[0]
+        return {'date': req.date, 'count': len(decompositions), 'decompositions': decompositions}
+
     if req.forecast_mwh is not None and req.actual_mwh is not None:
         mock_record = {
             'date': 'Custom Scenario',

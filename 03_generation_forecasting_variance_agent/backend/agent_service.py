@@ -1,11 +1,15 @@
 import re
+import json
+from pathlib import Path
 from typing import Dict, Any, List
+
+BASE_DIR = Path(__file__).resolve().parents[1]
 
 DOMAIN_KNOWLEDGE_BASE = [
     {
         "id": "KB-SOP-01",
         "topic": "Solar PV Temperature Derating",
-        "content": "Photovoltaic panel efficiency decreases with ambient temperature. Nominal module rating occurs at Standard Test Conditions (25°C). For every degree Celsius above 25°C, crystalline silicon modules experience approximately -0.4% derating in power conversion efficiency."
+        "content": "Photovoltaic panel efficiency decreases with ambient temperature. Nominal module rating occurs at Standard Test Conditions (25 degrees C). For every degree Celsius above 25 degrees C, crystalline silicon modules experience approximately -0.4% derating in power conversion efficiency."
     },
     {
         "id": "KB-SOP-02",
@@ -23,6 +27,12 @@ DOMAIN_KNOWLEDGE_BASE = [
         "content": "Total generation variance (Actual - Forecast) must be systematically decomposed into: (1) Operational Outage loss, (2) Solar irradiance deviation, (3) Wind resource variation, (4) Ambient temperature derate, and (5) Residual unmodeled grid curtailment or inverter clipping."
     }
 ]
+
+_external_kb_path = BASE_DIR / 'data' / 'knowledge_base.json'
+if _external_kb_path.exists():
+    with open(_external_kb_path, 'r', encoding='utf-8') as _f:
+        _extra = json.load(_f)
+    DOMAIN_KNOWLEDGE_BASE.extend(_extra)
 
 class AgentService:
     def __init__(self, model_service, variance_engine):
@@ -73,7 +83,7 @@ class AgentService:
         cleaned = prompt.strip()
         target_date = self.parse_date(cleaned)
         reasoning_steps = []
-        
+
         reasoning_steps.append({
             "step": 1,
             "title": "Intent Analysis & Entity Extraction",
@@ -89,9 +99,9 @@ class AgentService:
 
         if target_date and any(e.get("type") == "telemetry_record" for e in evidence):
             rec_matches = self.df[self.df['date'] == target_date]
-            row_dict = rec_matches.iloc[0].to_dict()
-            decomp = self.variance_engine.decompose_record(row_dict)
-            
+            all_decomps = [self.variance_engine.decompose_record(r.to_dict()) for _, r in rec_matches.iterrows()]
+            decomp = all_decomps[0]
+
             reasoning_steps.append({
                 "step": 3,
                 "title": "Quantitative Variance Decomposition",
@@ -115,9 +125,9 @@ class AgentService:
                 f"- **Total Variance:** `{decomp['total_variance_mwh']} MWh` ({decomp['variance_pct']}%)\n\n"
                 f"#### Driver Breakdown:\n"
                 f"1. **Outage Impact:** `{decomp['drivers']['outage_mwh']} MWh`\n"
-                f"2. **Solar Irradiance Driver:** `{decomp['drivers']['irradiance_mwh']} MWh` (Observed: {decomp['operating_conditions']['irradiance_wm2']} W/m²)\n"
+                f"2. **Solar Irradiance Driver:** `{decomp['drivers']['irradiance_mwh']} MWh` (Observed: {decomp['operating_conditions']['irradiance_wm2']} W/m2)\n"
                 f"3. **Wind Speed Driver:** `{decomp['drivers']['wind_mwh']} MWh` (Observed: {decomp['operating_conditions']['wind_speed_ms']} m/s)\n"
-                f"4. **Thermal Derate:** `{decomp['drivers']['temperature_mwh']} MWh` (Observed: {decomp['operating_conditions']['temperature_c']}°C)\n"
+                f"4. **Thermal Derate:** `{decomp['drivers']['temperature_mwh']} MWh` (Observed: {decomp['operating_conditions']['temperature_c']} deg C)\n"
                 f"5. **Residual / Grid Curtailment:** `{decomp['drivers']['residual_mwh']} MWh`\n\n"
                 f"**Key Finding:** {decomp['explanation']}"
             )
@@ -150,19 +160,19 @@ class AgentService:
             for _, row in outage_rows.iterrows():
                 d = self.variance_engine.decompose_record(row.to_dict())
                 outage_details.append(f"- **{d['date']}**: Forecast `{d['forecast_mwh']} MWh`, Actual `{d['actual_mwh']} MWh`, Variance `{d['total_variance_mwh']} MWh` (Outage Driver: `{d['drivers']['outage_mwh']} MWh`)")
-            
+
             recs = [
                 "Establish automated SLDC curtailment event telemetry feed into the day-ahead scheduling desk.",
                 "Implement predictive condition monitoring on inverter thermal junctions to prevent mid-day trips."
             ]
-            
+
             summary = (
                 f"### Asset Outage Impact Summary\n\n"
                 f"Found **{len(outage_rows)}** dates with recorded asset outages or severe curtailment:\n\n"
                 + "\n".join(outage_details) + "\n\n"
                 f"**Operational Insight:** Outage days represent the single largest contributor to downside forecast variance, causing an average miss exceeding -11 MWh per event."
             )
-            
+
             reasoning_steps.append({
                 "step": 3,
                 "title": "Outage Telemetry Aggregation",
@@ -187,7 +197,7 @@ class AgentService:
             miss_lines = []
             for m in top_misses:
                 miss_lines.append(f"1. **{m['date']}** | Category: `{m['category']}` | Variance: `{m['total_variance_mwh']} MWh` (Forecast: {m['forecast_mwh']}, Actual: {m['actual_mwh']})")
-            
+
             summary = (
                 f"### Top 5 Forecast Misses Audit\n\n"
                 + "\n".join(miss_lines) + "\n\n"
@@ -221,16 +231,16 @@ class AgentService:
         else:
             stats = self.model_service.get_summary_stats()
             metrics = self.model_service.metrics_summary
-            
+
             summary = (
                 f"### Greenko Renewable Generation & Variance Overview\n\n"
                 f"- **Total Asset Telemetry Records:** `{stats['total_records']} Days`\n"
                 f"- **Total Generation Delivered:** `{stats['total_actual_mwh']:,} MWh` (vs Forecast: `{stats['total_forecast_mwh']:,} MWh`)\n"
                 f"- **Net Portfolio Variance:** `{stats['net_variance_mwh']} MWh`\n"
                 f"- **Mean Absolute Variance:** `{stats['mean_abs_variance_mwh']} MWh/day`\n"
-                f"- **Baseline Operational Forecast MAE:** `{metrics['operational_baseline']['mae']} MWh` (R²: `{metrics['operational_baseline']['r2']}`)\n"
+                f"- **Baseline Operational Forecast MAE:** `{metrics['operational_baseline']['mae']} MWh` (R2: `{metrics['operational_baseline']['r2']}`)\n"
                 f"- **ML Tuned Model Cross-Validated MAE:** `{metrics['gradient_boosting_model']['cv_mae']} MWh`\n\n"
-                f"**Domain Explanation:** Generation is governed by solar irradiance, cubic wind velocity dynamics, ambient temperature PV efficiency loss (-0.4%/°C above 25°C), and equipment availability flags."
+                f"**Domain Explanation:** Generation is governed by solar irradiance, cubic wind velocity dynamics, ambient temperature PV efficiency loss (-0.4%/deg C above 25 deg C), and equipment availability flags."
             )
 
             reasoning_steps.append({
@@ -254,4 +264,3 @@ class AgentService:
                     "Aggregated daily dataset with no sub-hourly power ramp tracking."
                 ]
             }
-

@@ -5,6 +5,7 @@ from sklearn.linear_model import Ridge
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_validate
+from sklearn.preprocessing import StandardScaler
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_PATH = BASE_DIR / 'data' / 'generation_forecast.csv'
@@ -17,6 +18,7 @@ class ModelService:
         self.engineered_cols = ['irradiance_wm2', 'wind_speed_ms', 'temperature_c', 'outage_flag', 'wind_cubed', 'temp_derate', 'irr_kw']
         self.baseline_ridge = None
         self.gb_model = None
+        self.scaler = None
         self.metrics_summary = {}
         self.feature_importances = {}
         self.initialize()
@@ -33,44 +35,62 @@ class ModelService:
         self.df['variance_mwh'] = np.round(self.df['actual_mwh'] - self.df['forecast_mwh'], 2)
         self.df['abs_variance_mwh'] = np.round(np.abs(self.df['variance_mwh']), 2)
         self.df['variance_pct'] = np.round((self.df['variance_mwh'] / np.maximum(self.df['forecast_mwh'], 0.1)) * 100, 2)
-        
+
         df_feats = self.engineer_features(self.df)
-        X = df_feats[self.engineered_cols]
-        y = self.df['actual_mwh']
-        baseline_preds = self.df['forecast_mwh']
+        X_all = df_feats[self.engineered_cols].values
+        y_all = self.df['actual_mwh'].values
+
+        train_size = 48
+        X_train = X_all[:train_size]
+        X_test = X_all[train_size:]
+        y_train = y_all[:train_size]
+        y_test = y_all[train_size:]
+
+        self.scaler = StandardScaler()
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        X_all_scaled = self.scaler.transform(X_all)
+
+        baseline_preds = self.df['forecast_mwh'].values
+        y_series = self.df['actual_mwh']
 
         self.baseline_ridge = Ridge(alpha=1.0)
-        self.baseline_ridge.fit(X, y)
-        ridge_preds = self.baseline_ridge.predict(X)
+        self.baseline_ridge.fit(X_train_scaled, y_train)
+        ridge_preds = self.baseline_ridge.predict(X_all_scaled)
 
         self.gb_model = GradientBoostingRegressor(n_estimators=80, max_depth=3, learning_rate=0.08, random_state=42)
-        self.gb_model.fit(X, y)
-        gb_preds = self.gb_model.predict(X)
-        self.df['ml_forecast_mwh'] = np.round(gb_preds, 2)
+        self.gb_model.fit(X_train_scaled, y_train)
+        gb_preds_train = self.gb_model.predict(X_train_scaled)
+        gb_preds_test = self.gb_model.predict(X_test_scaled)
+        gb_preds_all = self.gb_model.predict(X_all_scaled)
+        self.df['ml_forecast_mwh'] = np.round(gb_preds_all, 2)
 
         cv = KFold(n_splits=5, shuffle=True, random_state=42)
-        cv_results = cross_validate(self.gb_model, X, y, cv=cv, scoring=['neg_mean_absolute_error', 'neg_root_mean_squared_error', 'r2'])
+        cv_results = cross_validate(self.gb_model, X_train_scaled, y_train, cv=cv, scoring=['neg_mean_absolute_error', 'neg_root_mean_squared_error', 'r2'])
 
-        actual_mean = float(y.mean())
+        actual_mean = float(y_series.mean())
         self.metrics_summary = {
             'operational_baseline': {
-                'mae': round(float(mean_absolute_error(y, baseline_preds)), 3),
-                'rmse': round(float(root_mean_squared_error(y, baseline_preds)), 3),
-                'r2': round(float(r2_score(y, baseline_preds)), 3),
-                'mape': round(float(np.mean(np.abs((y - baseline_preds) / np.maximum(y, 0.1))) * 100), 2),
-                'nmae': round(float((mean_absolute_error(y, baseline_preds) / actual_mean) * 100), 2)
+                'mae': round(float(mean_absolute_error(y_series, baseline_preds)), 3),
+                'rmse': round(float(root_mean_squared_error(y_series, baseline_preds)), 3),
+                'r2': round(float(r2_score(y_series, baseline_preds)), 3),
+                'mape': round(float(np.mean(np.abs((y_series - baseline_preds) / np.maximum(y_series, 0.1))) * 100), 2),
+                'nmae': round(float((mean_absolute_error(y_series, baseline_preds) / actual_mean) * 100), 2)
             },
             'ridge_linear_baseline': {
-                'mae': round(float(mean_absolute_error(y, ridge_preds)), 3),
-                'rmse': round(float(root_mean_squared_error(y, ridge_preds)), 3),
-                'r2': round(float(r2_score(y, ridge_preds)), 3),
-                'mape': round(float(np.mean(np.abs((y - ridge_preds) / np.maximum(y, 0.1))) * 100), 2),
-                'nmae': round(float((mean_absolute_error(y, ridge_preds) / actual_mean) * 100), 2)
+                'mae': round(float(mean_absolute_error(y_series, ridge_preds)), 3),
+                'rmse': round(float(root_mean_squared_error(y_series, ridge_preds)), 3),
+                'r2': round(float(r2_score(y_series, ridge_preds)), 3),
+                'mape': round(float(np.mean(np.abs((y_series - ridge_preds) / np.maximum(y_series, 0.1))) * 100), 2),
+                'nmae': round(float((mean_absolute_error(y_series, ridge_preds) / actual_mean) * 100), 2)
             },
             'gradient_boosting_model': {
-                'train_mae': round(float(mean_absolute_error(y, gb_preds)), 3),
-                'train_rmse': round(float(root_mean_squared_error(y, gb_preds)), 3),
-                'train_r2': round(float(r2_score(y, gb_preds)), 3),
+                'train_mae': round(float(mean_absolute_error(y_train, gb_preds_train)), 3),
+                'train_rmse': round(float(root_mean_squared_error(y_train, gb_preds_train)), 3),
+                'train_r2': round(float(r2_score(y_train, gb_preds_train)), 3),
+                'test_mae': round(float(mean_absolute_error(y_test, gb_preds_test)), 3),
+                'test_rmse': round(float(root_mean_squared_error(y_test, gb_preds_test)), 3),
+                'test_r2': round(float(r2_score(y_test, gb_preds_test)), 3),
                 'cv_mae': round(float(-cv_results['test_neg_mean_absolute_error'].mean()), 3),
                 'cv_rmse': round(float(-cv_results['test_neg_root_mean_squared_error'].mean()), 3),
                 'cv_r2': round(float(cv_results['test_r2'].mean()), 3),
@@ -90,13 +110,14 @@ class ModelService:
             'outage_flag': int(outage_flag)
         }])
         row_feat = self.engineer_features(row)[self.engineered_cols]
-        pred_ml = float(self.gb_model.predict(row_feat)[0])
-        pred_ridge = float(self.baseline_ridge.predict(row_feat)[0])
-        
+        row_scaled = self.scaler.transform(row_feat)
+        pred_ml = float(self.gb_model.predict(row_scaled)[0])
+        pred_ridge = float(self.baseline_ridge.predict(row_scaled)[0])
+
         solar_capacity_factor = min(1.0, max(0.0, float(irradiance_wm2) / 1000.0))
         wind_capacity_factor = min(1.0, max(0.0, ((float(wind_speed_ms) / 11.5) ** 3)))
         temp_loss_pct = max(0.0, (float(temperature_c) - 25.0) * 0.4)
-        
+
         return {
             'predicted_mwh': round(max(0.0, pred_ml), 2),
             'baseline_linear_mwh': round(max(0.0, pred_ridge), 2),
@@ -121,4 +142,3 @@ class ModelService:
             'avg_wind_speed_ms': round(float(self.df['wind_speed_ms'].mean()), 2),
             'avg_temperature_c': round(float(self.df['temperature_c'].mean()), 2)
         }
-

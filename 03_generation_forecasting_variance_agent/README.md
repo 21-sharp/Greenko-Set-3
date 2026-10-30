@@ -1,56 +1,65 @@
+# Power Generation Forecasting & Variance Explanation Agent
 
-   # Power Generation Forecasting & Variance Explanation Agent
+## Project Overview
 
-**Context:** Greenko operates complex renewable-energy assets and enterprise workflows where AI can support operations, maintenance, safety, analytics, and decision support.
+This system forecasts renewable energy generation and explains variance between forecasted and actual output using a five-component attribution waterfall. It combines a Gradient Boosting regression model with a lightweight retrieval-augmented agent backed by Greenko standard operating procedure knowledge entries.
 
-## Problem Statement
+The agent ingests daily telemetry (irradiance, wind speed, temperature, outage flag) and decomposes any forecast miss into quantified driver contributions: forced outage, solar irradiance deviation, wind resource variation, ambient temperature derating, and an unmodeled residual that captures inverter clipping or SLDC curtailment not reflected in the schedule.
 
-Forecast renewable generation and explain variance against actual generation.
+## Quick Start
 
-## Expected Outcome
+Install dependencies:
 
-A forecasting baseline with variance analysis and a lightweight agent that explains forecast miss drivers such as irradiation, wind speed, temperature, and outage flags.
+```
+pip install -r requirements.txt
+```
 
-## Skills Tested
+Start the server:
 
-forecasting, regression, feature engineering, variance analysis, LLM summary, Python API, frontend
+```
+uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
 
-## Candidate Submission Requirements
+Open the UI at http://127.0.0.1:8000
 
-1. Build the Python backend or notebook pipeline.
-2. Build a simple React or HTML/CSS frontend to demonstrate the workflow.
-3. Use the bundled dummy dataset as the minimum runnable dataset.
-4. Add clear documentation explaining design choices, assumptions, model logic, limitations, and evaluation results.
-5. Deploy the completed app to Railway.
+On Windows you can also run `run_server.bat` from the project root.
 
-## Dataset Note
+## API Endpoints
 
-This package includes a small self-contained dummy dataset so the assignment can run without internet access. Candidates may optionally extend the dataset using public sources such as Hugging Face datasets, Kaggle, Open Power System Data, NREL examples, or other open energy/NLP datasets, but the core submission must run using the bundled data.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/health | Service health check |
+| GET | /api/demo | Case study metadata and summary statistics |
+| GET | /api/data | All 60 records with variance decompositions |
+| GET | /api/metrics | Model benchmarks, feature importances, and attribution methodology |
+| POST | /api/predict | Point forecast given environmental inputs |
+| POST | /api/analyze-variance | Variance waterfall for a specific date or custom scenario |
+| POST | /api/run | Natural language agent query with reasoning steps and recommendations |
 
-## Suggested Deliverables
+## Evaluation Results
 
-- Working Python implementation
-- API endpoint or executable script
-- UI prototype
-- Model / retrieval / classification output examples
-- Evaluation results
-- Short explanation of production-readiness gaps
+Models were trained on the first 48 chronological records and evaluated on the final 12 held-out records.
 
-# Evaluation Rubric
+| Metric | Operational Baseline | Ridge Linear | Gradient Boosting Train | Gradient Boosting Test |
+|--------|---------------------|--------------|------------------------|------------------------|
+| MAE (MWh) | see /api/metrics | see /api/metrics | see /api/metrics | see /api/metrics |
+| RMSE (MWh) | see /api/metrics | see /api/metrics | see /api/metrics | see /api/metrics |
+| R2 | see /api/metrics | see /api/metrics | see /api/metrics | see /api/metrics |
 
-Score each submission out of 100 using the same Greenko AI/ML intern screening philosophy.
+Live values are returned by the `/api/metrics` endpoint under `model_benchmarks.gradient_boosting_model` which exposes `train_mae`, `train_rmse`, `train_r2`, `test_mae`, `test_rmse`, `test_r2`, `cv_mae`, `cv_rmse`, and `cv_r2`.
 
-| Area | Weight |
-|---|---:|
-| Problem understanding and energy-domain framing | 10 |
-| Python implementation quality | 12 |
-| AI/ML or GenAI method selection | 14 |
-| Data preprocessing and feature engineering | 10 |
-| RAG / retrieval / agentic workflow quality, where applicable | 12 |
-| Evaluation metrics and validation approach | 12 |
-| API/backend design | 8 |
-| Frontend usability and explanation clarity | 8 |
-| Documentation and reproducibility | 8 |
-| Deployment readiness, including Railway deployment step | 6 |
+## Assumptions and Limitations
 
-Strong submissions should clearly explain assumptions, limitations, failure cases, and next steps for productionization.
+- The dataset contains 60 synthetic daily records spanning August 2026 and is intended solely for demonstration. It does not reflect actual Greenko plant telemetry.
+- All features are aggregated at daily granularity. Sub-hourly ramp events, intra-day cloud transients, and 15-minute scheduling block dynamics are not captured.
+- The `outage_flag` is a binary indicator. It does not distinguish between a forced inverter trip, a scheduled maintenance window, and an SLDC grid curtailment instruction.
+- The variance attribution coefficients (`solar_coeff`, `wind_coeff`) are derived from OLS regression on the non-outage subset of the training data. They represent average sensitivities across the dataset and may not generalise to individual asset types or seasonal conditions.
+- StandardScaler normalisation is fitted exclusively on training rows (rows 0-47) and applied to both the test set and live inference to prevent data leakage.
+- The knowledge base is loaded from `data/knowledge_base.json` at startup and extended with the four hard-coded SOP entries. Additional domain entries can be appended to that file without restarting the service.
+- Deployment on Vercel uses the Mangum ASGI adapter (`backend/api.py`). The Railway deployment uses the `Procfile` with `uvicorn`.
+
+## Deployment
+
+Railway: uses `Procfile` and `railway.json` already present in the repository root.
+
+Vercel: uses `vercel.json` routing all requests to the Mangum handler in `backend/api.py`.
