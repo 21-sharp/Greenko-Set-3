@@ -14,9 +14,11 @@ try:
 except ImportError:
     from app import app
 
-def handler(event, context):
+if sys.platform != 'win32':
     try:
         from mangum import Mangum
-        return Mangum(app, lifespan="off")(event, context)
+        handler = Mangum(app)
     except Exception:
-        return app(event, context)
+        handler = app
+else:
+    handler = app
