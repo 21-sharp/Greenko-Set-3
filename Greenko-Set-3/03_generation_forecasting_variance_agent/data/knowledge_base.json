@@ -1,0 +1,13 @@
+[
+    {
+        "id": "KB-EXT-01",
+        "topic": "SLDC Curtailment Events",
+        "content": "State Load Despatch Centre (SLDC) curtailment occurs when grid frequency deviation or transmission congestion forces a renewable generator to back down below its available capacity. Curtailment events are logged by the SLDC as a Deviation Settlement Mechanism (DSM) block and must be reconciled against day-ahead schedules. Under CERC DSM regulations, under-injection during a curtailment window is not penalised, but the generator must maintain telemetry proof of grid dispatch instructions."
+    },
+    {
+        "id": "KB-EXT-02",
+        "topic": "Inverter Clipping Threshold",
+        "content": "Solar inverters are rated to a maximum AC output (e.g., 1 MW per 1.1 MW DC array). When DC power from the PV field exceeds the inverter AC limit during peak irradiance hours (typically 10:00-14:00 IST in summer), the excess is clipped and lost. Clipping losses typically range from 1-4% annually for well-designed systems but can exceed 8% on high-irradiance days when multiple inverter strings simultaneously reach rated output. Clipping is captured in the residual variance component after accounting for irradiance, wind, and temperature drivers."
+    }
+]
+
