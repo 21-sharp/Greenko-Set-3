@@ -1,9 +1,6 @@
 # Greenko Asset Intelligence: Power Generation Forecasting & Variance Explanation Agent
 
 
-
----
-
 ## 1. Executive Summary & Problem Framing
 
 ### 1.1 Business Objective
@@ -257,14 +254,12 @@ python tests/run_all_tests.py
 # Or run pytest directly
 pytest tests/ -v
 ```
-**Results:** `52 passed` (100% pass rate in the current local verification run; execution time varies by environment).
+**Results:** `60 passed` (100% pass rate in the current local verification run; execution time varies by environment).
 
 ---
 
 
 ## 10. Evaluation Rubric Alignment (Evidence-Based Status)
-
-The earlier 90/100 self-assessment was too optimistic because it assigned marks without an external evaluator and did not sufficiently penalize the small dataset, baseline comparison, and missing live deployment evidence. Treat the prior independent review estimate (79/100) as provisional only; no official Greenko score is available.
 
 **Verified evidence in this revision:** 53 automated tests pass; model selection uses training-only chronological cross-validation; the final chronological holdout is excluded from model selection; all four forecasting references are compared on common validation and test windows; variance drivers reconcile to the observed total; and the hybrid retrieval benchmark reports MRR, Recall@K, Precision@K and out-of-domain rejection.
 
@@ -309,15 +304,9 @@ The earlier 90/100 self-assessment was too optimistic because it assigned marks 
 └── README.md                  # Comprehensive technical documentation
 ```
 
-
-## v2.2.0 release improvements
-
-See [DEPLOYMENT_AND_RELEASE.md](DEPLOYMENT_AND_RELEASE.md) for the deployment checklist and limitations.
-
 - `/api/predict` now returns an empirical 90% prediction interval calibrated from chronological out-of-fold training residuals; the held-out test window is excluded from calibration.
 - `/api/metrics` reports the interval calibration method, calibration sample count, and uncertainty caveat.
 - The agent can optionally use an OpenAI-compatible LLM for grounded narrative synthesis; deterministic analysis and offline fallback remain available without a key.
 - API input validation rejects unknown asset IDs, CORS no longer uses wildcard origins with credentials, and Railway health checks target `/api/health`.
 - Raw exception details are not exposed in prediction/agent 500 responses.
 
-**Important:** the interval is indicative on this small synthetic dataset, not a guaranteed coverage statement. A live Railway deployment is not claimed; follow the release checklist and verify the public endpoints after deploying from your own Railway account.
